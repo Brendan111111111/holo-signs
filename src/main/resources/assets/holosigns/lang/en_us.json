@@ -3,5 +3,18 @@
   "itemGroup.holosigns.main": "Holo Signs",
   "screen.holosigns.projector.title": "Hologram Projector",
   "screen.holosigns.projector.line": "Line %s",
-  "screen.holosigns.projector.save": "Save Display"
+  "screen.holosigns.projector.save": "Save Display",
+  "screen.holosigns.projector.facing": "Facing: %s",
+  "screen.holosigns.projector.distance": "Distance: %s",
+  "screen.holosigns.projector.size": "Size: %s",
+  "screen.holosigns.projector.background": "BG",
+  "screen.holosigns.projector.camo": "Camo",
+  "screen.holosigns.projector.camo_hint": "Click with a block in hand to camouflage. Right-click to clear.",
+  "screen.holosigns.projector.camo_invalid": "Hold a regular block to use as camouflage.",
+  "direction.holosigns.up": "Up",
+  "direction.holosigns.down": "Down",
+  "direction.holosigns.north": "North",
+  "direction.holosigns.south": "South",
+  "direction.holosigns.east": "East",
+  "direction.holosigns.west": "West"
 }

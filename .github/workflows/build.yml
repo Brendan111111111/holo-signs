@@ -2,9 +2,13 @@ name: Build
 
 on: [push, pull_request]
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -23,5 +27,39 @@ jobs:
         with:
           gradle-version: '9.2.1'
 
-      - name: Build with Gradle
-        run: gradle build
+      # Fail loudly if the test-only OpenComputers jar was not committed; otherwise the
+      # integration would quietly compile out and the link test would be skipped.
+      - name: Verify OpenComputers test jar
+        run: |
+          test -f libs/opencomputers-neoforge-1.11.0.jar
+          echo "862e762c41f240df512e92dde33127d44278725d57f52b40ed2ebe83d4eaf1f9  libs/opencomputers-neoforge-1.11.0.jar" | sha256sum -c -
+
+      # `build` compiles and packages the mod and runs the JUnit tests through `check`.
+      - name: Build and unit tests
+        run: gradle build --console=plain
+
+      - name: Upload mod jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: holosigns-jar
+          path: build/libs/holosigns-*.jar
+          if-no-files-found: error
+
+      # The 26.1 OpenComputers build is not published; the test jar is kept in libs/.
+      - name: Install OpenComputers test mod
+        run: gradle stageOpenComputersTestMod --console=plain
+
+      # Starts a real headless GameTestServer, runs the projector game tests, then exits.
+      - name: Headless game tests
+        run: gradle runGameTestServer --console=plain
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            build/reports/tests/test
+            run/logs
+            run/crash-reports
+          if-no-files-found: ignore

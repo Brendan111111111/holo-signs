@@ -1,21 +1,26 @@
 package com.brendan.holograms;
 
+import com.brendan.holograms.compat.ProjectorLinkHook;
 import com.mojang.serialization.MapCodec;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.Mirror;
+import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.level.block.state.properties.EnumProperty;
 import net.minecraft.world.phys.BlockHitResult;
 import org.jetbrains.annotations.Nullable;
@@ -28,6 +33,7 @@ import org.jetbrains.annotations.Nullable;
 public final class ProjectorBlock extends Block implements EntityBlock {
     public static final MapCodec<ProjectorBlock> CODEC = simpleCodec(ProjectorBlock::new);
     public static final EnumProperty<Direction> FACING = BlockStateProperties.FACING;
+    public static final BooleanProperty CAMOUFLAGED = BooleanProperty.create("camouflaged");
 
     /** Cycle order used by sneak-use and the editor's direction button. */
     public static final Direction[] DIRECTION_CYCLE = {
@@ -46,7 +52,14 @@ public final class ProjectorBlock extends Block implements EntityBlock {
 
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
-        builder.add(FACING);
+        builder.add(FACING, CAMOUFLAGED);
+    }
+
+    @Override
+    protected RenderShape getRenderShape(BlockState state) {
+        // A camouflaged projector is drawn by its block entity renderer using the chosen block's
+        // model, so the chunk renderer must not draw the projector model underneath it.
+        return state.getValue(CAMOUFLAGED) ? RenderShape.INVISIBLE : RenderShape.MODEL;
     }
 
     @Override
@@ -75,7 +88,28 @@ public final class ProjectorBlock extends Block implements EntityBlock {
 
     @Override
     public @Nullable BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
-        return new ProjectorBlockEntity(pos, state);
+        // Delegate to the factory so an OpenComputers build can substitute its TextBuffer-capable
+        // block entity. Constructing the plain class here would bypass that substitution entirely.
+        return HoloSigns.createProjectorBlockEntity(pos, state);
+    }
+
+    /**
+     * Consumes clicks made with OpenComputers' Screen Linker. Without this the click falls through
+     * to {@link #useWithoutItem} and opens the editor, which makes the projector impossible to bind
+     * to a computer wirelessly. Non-linker items keep vanilla's empty-hand fallback, so the editor
+     * still opens on a normal right-click.
+     */
+    @Override
+    protected InteractionResult useItemOn(ItemStack stack, BlockState state, Level level, BlockPos pos,
+                                          Player player, InteractionHand hand, BlockHitResult hitResult) {
+        if (ProjectorLinkHook.isLinker(stack)) {
+            InteractionResult result = ProjectorLinkHook.use(stack, level, pos, player, hand, hitResult);
+            if (result.consumesAction()) return result;
+            // No OpenComputers integration handled the click (core-only build, or a projector
+            // without the TextBuffer block entity). Fall through so the editor still opens instead
+            // of leaving the right-click dead.
+        }
+        return super.useItemOn(stack, state, level, pos, player, hand, hitResult);
     }
 
     @Override

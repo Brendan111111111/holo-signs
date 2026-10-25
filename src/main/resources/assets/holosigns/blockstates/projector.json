@@ -1,8 +1,16 @@
 {
   "variants": {
-    "facing=north": { "model": "holosigns:block/projector" },
-    "facing=east": { "model": "holosigns:block/projector", "y": 90 },
-    "facing=south": { "model": "holosigns:block/projector", "y": 180 },
-    "facing=west": { "model": "holosigns:block/projector", "y": 270 }
+    "facing=down,camouflaged=false": { "model": "holosigns:block/projector", "x": 90 },
+    "facing=up,camouflaged=false": { "model": "holosigns:block/projector", "x": 270 },
+    "facing=north,camouflaged=false": { "model": "holosigns:block/projector" },
+    "facing=south,camouflaged=false": { "model": "holosigns:block/projector", "y": 180 },
+    "facing=west,camouflaged=false": { "model": "holosigns:block/projector", "y": 270 },
+    "facing=east,camouflaged=false": { "model": "holosigns:block/projector", "y": 90 },
+    "facing=down,camouflaged=true": { "model": "holosigns:block/projector" },
+    "facing=up,camouflaged=true": { "model": "holosigns:block/projector" },
+    "facing=north,camouflaged=true": { "model": "holosigns:block/projector" },
+    "facing=south,camouflaged=true": { "model": "holosigns:block/projector" },
+    "facing=west,camouflaged=true": { "model": "holosigns:block/projector" },
+    "facing=east,camouflaged=true": { "model": "holosigns:block/projector" }
   }
 }

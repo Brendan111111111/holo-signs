@@ -19,8 +19,29 @@ public final class TerminalBuffer {
     public static final int DEFAULT_COLUMNS = 24;
     public static final int DEFAULT_ROWS = 10;
 
+    /**
+     * Grid resolution for a projector's configured size. The default 24x10 grid is used at 100%,
+     * so a larger hologram has more columns and rows instead of only magnifying the same grid. The
+     * result is always within the terminal's minimum and maximum.
+     */
+    public static int columnsForSizePercent(int sizePercent) {
+        return scaledDimension(DEFAULT_COLUMNS, sizePercent, MIN_COLUMNS, MAX_COLUMNS);
+    }
+
+    public static int rowsForSizePercent(int sizePercent) {
+        return scaledDimension(DEFAULT_ROWS, sizePercent, MIN_ROWS, MAX_ROWS);
+    }
+
+    private static int scaledDimension(int base, int sizePercent, int minimum, int maximum) {
+        // Double avoids overflow for an extreme size while the clamp bounds the result anyway.
+        long scaled = Math.round(base * (sizePercent / 100.0));
+        return (int) Math.max(minimum, Math.min(maximum, scaled));
+    }
+
     public static final int DEFAULT_FOREGROUND = 0xFFFFFF;
     public static final int DEFAULT_BACKGROUND = 0x000000;
+    /** Upper bound for one computer write, so a huge Lua string cannot stall the server. */
+    public static final int MAX_WRITE_LENGTH = 16384;
 
     private int columns;
     private int rows;
@@ -33,6 +54,11 @@ public final class TerminalBuffer {
     private int activeBackground = DEFAULT_BACKGROUND;
     private boolean cursorBlink;
     private Runnable onChanged = () -> {};
+    private int version;
+    private int batchDepth;
+    private boolean pendingChanged;
+    private boolean hasTextCache;
+    private int hasTextVersion = -1;
 
     public TerminalBuffer() {
         allocate(DEFAULT_COLUMNS, DEFAULT_ROWS);
@@ -56,6 +82,30 @@ public final class TerminalBuffer {
 
     public void setOnChanged(Runnable onChanged) {
         this.onChanged = onChanged == null ? () -> {} : onChanged;
+    }
+
+    /** Increments once per completed change, letting renderers cache a snapshot. */
+    public int getVersion() {
+        return version;
+    }
+
+    /**
+     * Defers change notifications until the matching {@link #endBatch()}. Graphics cards set whole
+     * rows cell by cell; without this every cell would mark the block entity dirty and queue a
+     * client update.
+     */
+    public void beginBatch() {
+        batchDepth++;
+    }
+
+    public void endBatch() {
+        if (batchDepth == 0) return;
+        batchDepth--;
+        if (batchDepth == 0 && pendingChanged) {
+            pendingChanged = false;
+            version++;
+            onChanged.run();
+        }
     }
 
     public int getColumns() {
@@ -129,7 +179,9 @@ public final class TerminalBuffer {
 
     public void write(String text) {
         if (text == null || text.isEmpty()) return;
+        int processed = 0;
         for (int index = 0; index < text.length(); ) {
+            if (processed++ >= MAX_WRITE_LENGTH) break;
             int codePoint = text.codePointAt(index);
             index += Character.charCount(codePoint);
             if (codePoint == '\n') {
@@ -166,8 +218,11 @@ public final class TerminalBuffer {
     }
 
     public void setCursor(int column, int row) {
-        cursorColumn = clamp(column, 0, columns - 1);
-        cursorRow = clamp(row, 0, rows - 1);
+        int newColumn = clamp(column, 0, columns - 1);
+        int newRow = clamp(row, 0, rows - 1);
+        if (newColumn == cursorColumn && newRow == cursorRow) return;
+        cursorColumn = newColumn;
+        cursorRow = newRow;
         changed();
     }
 
@@ -322,10 +377,18 @@ public final class TerminalBuffer {
     }
 
     public boolean hasText() {
-        for (char character : characters) {
-            if (character != ' ') return true;
+        if (hasTextVersion != version) {
+            hasTextVersion = version;
+            boolean found = false;
+            for (char character : characters) {
+                if (character != ' ') {
+                    found = true;
+                    break;
+                }
+            }
+            hasTextCache = found;
         }
-        return false;
+        return hasTextCache;
     }
 
     public List<String> textRows() {
@@ -375,6 +438,11 @@ public final class TerminalBuffer {
     }
 
     private void changed() {
+        if (batchDepth > 0) {
+            pendingChanged = true;
+            return;
+        }
+        version++;
         onChanged.run();
     }
 }

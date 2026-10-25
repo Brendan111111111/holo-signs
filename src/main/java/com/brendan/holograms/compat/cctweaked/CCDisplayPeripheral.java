@@ -11,6 +11,7 @@ import dan200.computercraft.api.peripheral.PeripheralType;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.Identifier;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -27,11 +28,8 @@ public final class CCDisplayPeripheral implements GenericPeripheral {
             0xF0F0F0, 0xF2B233, 0xE57FD8, 0x99B2F2, 0xDEDE6C, 0x7FCC19, 0xF2B2CC, 0x4C4C4C,
             0x999999, 0x4C99B2, 0xB266E5, 0x3366CC, 0x7F664C, 0x57A64E, 0xCC4C4C, 0x191919
     };
-    private static final int WHITE = 0x1;
-    private static final int BLACK = 0x8000;
-
-    private int textColour = WHITE;
-    private int backgroundColour = BLACK;
+    // Monitor colours live on the projector's terminal, not on this shared peripheral instance;
+    // otherwise setting a colour on one projector would leak into every other projector.
 
     @Override
     public String id() { return Identifier.fromNamespaceAndPath(HoloSigns.MOD_ID, "projector").toString(); }
@@ -64,52 +62,44 @@ public final class CCDisplayPeripheral implements GenericPeripheral {
 
     @LuaFunction(mainThread = true)
     public final void write(ProjectorBlockEntity projector, String text) {
-        TerminalBuffer terminal = projector.getTerminal();
-        applyColours(terminal);
-        terminal.write(text);
+        projector.getTerminal().write(text);
     }
 
     @LuaFunction(mainThread = true)
     public final void clear(ProjectorBlockEntity projector) {
-        TerminalBuffer terminal = projector.getTerminal();
-        applyColours(terminal);
-        terminal.clear();
+        projector.getTerminal().clear();
     }
 
     @LuaFunction(mainThread = true)
     public final void clearLine(ProjectorBlockEntity projector) {
-        TerminalBuffer terminal = projector.getTerminal();
-        applyColours(terminal);
-        terminal.clearLine();
+        projector.getTerminal().clearLine();
     }
 
     @LuaFunction(mainThread = true)
     public final void scroll(ProjectorBlockEntity projector, int lines) {
-        TerminalBuffer terminal = projector.getTerminal();
-        applyColours(terminal);
-        terminal.scroll(lines);
+        projector.getTerminal().scroll(lines);
     }
 
     @LuaFunction(mainThread = true)
     public final void setTextColour(ProjectorBlockEntity projector, int colour) throws LuaException {
-        textColour = checkColour(colour);
-        applyColours(projector.getTerminal());
+        TerminalBuffer terminal = projector.getTerminal();
+        terminal.setActiveColors(colourToRgb(checkColour(colour)), terminal.getActiveBackground());
     }
 
     @LuaFunction(mainThread = true)
     public final int getTextColour(ProjectorBlockEntity projector) {
-        return textColour;
+        return nearestColour(projector.getTerminal().getActiveForeground());
     }
 
     @LuaFunction(mainThread = true)
     public final void setBackgroundColour(ProjectorBlockEntity projector, int colour) throws LuaException {
-        backgroundColour = checkColour(colour);
-        applyColours(projector.getTerminal());
+        TerminalBuffer terminal = projector.getTerminal();
+        terminal.setActiveColors(terminal.getActiveForeground(), colourToRgb(checkColour(colour)));
     }
 
     @LuaFunction(mainThread = true)
     public final int getBackgroundColour(ProjectorBlockEntity projector) {
-        return backgroundColour;
+        return nearestColour(projector.getTerminal().getActiveBackground());
     }
 
     @LuaFunction(mainThread = true)
@@ -175,15 +165,22 @@ public final class CCDisplayPeripheral implements GenericPeripheral {
     @LuaFunction(mainThread = true)
     public final void setLine(ProjectorBlockEntity projector, int line, String text) throws LuaException {
         if (line < 1 || line > ProjectorBlockEntity.MAX_LINES) throw new LuaException("line must be between 1 and " + ProjectorBlockEntity.MAX_LINES);
-        if (text.codePointCount(0, text.length()) > ProjectorBlockEntity.MAX_LINE_LENGTH) throw new LuaException("text must be at most " + ProjectorBlockEntity.MAX_LINE_LENGTH + " characters");
+        if (isTooLong(text)) throw new LuaException("text must be at most " + ProjectorBlockEntity.MAX_LINE_LENGTH + " characters");
         projector.setLine(line - 1, text);
     }
 
     @LuaFunction(mainThread = true)
-    public final void setLines(ProjectorBlockEntity projector, List<String> lines) throws LuaException {
+    public final void setLines(ProjectorBlockEntity projector, List<?> lines) throws LuaException {
+        // CC:Tweaked only accepts wildcard type arguments when converting a Lua table, so the
+        // parameter stays List<?> and each entry is checked here.
         if (lines.size() > ProjectorBlockEntity.MAX_LINES) throw new LuaException("at most " + ProjectorBlockEntity.MAX_LINES + " lines are supported");
-        if (lines.stream().anyMatch(line -> line.codePointCount(0, line.length()) > ProjectorBlockEntity.MAX_LINE_LENGTH)) throw new LuaException("each line must be at most " + ProjectorBlockEntity.MAX_LINE_LENGTH + " characters");
-        projector.setLines(lines);
+        List<String> values = new ArrayList<>(lines.size());
+        for (Object line : lines) {
+            if (!(line instanceof String text)) throw new LuaException("each line must be a string");
+            if (isTooLong(text)) throw new LuaException("each line must be at most " + ProjectorBlockEntity.MAX_LINE_LENGTH + " characters");
+            values.add(text);
+        }
+        projector.setLines(values);
     }
 
     @LuaFunction(mainThread = true)
@@ -191,8 +188,9 @@ public final class CCDisplayPeripheral implements GenericPeripheral {
 
     // ---------------------------------------------------------------- helpers
 
-    private void applyColours(TerminalBuffer terminal) {
-        terminal.setActiveColors(colourToRgb(textColour), colourToRgb(backgroundColour));
+    private static boolean isTooLong(String text) {
+        return text.length() > ProjectorBlockEntity.MAX_LINE_LENGTH * 2
+                || text.codePointCount(0, text.length()) > ProjectorBlockEntity.MAX_LINE_LENGTH;
     }
 
     private static int checkColour(int colour) throws LuaException {
@@ -205,5 +203,22 @@ public final class CCDisplayPeripheral implements GenericPeripheral {
     private static int colourToRgb(int colour) {
         int index = Integer.numberOfTrailingZeros(colour);
         return index >= 0 && index < PALETTE.length ? PALETTE[index] : 0xFFFFFF;
+    }
+
+    /** Maps an arbitrary RGB value written by another integration to the closest CC colour. */
+    private static int nearestColour(int rgb) {
+        int best = 0;
+        int bestDistance = Integer.MAX_VALUE;
+        for (int index = 0; index < PALETTE.length; index++) {
+            int red = ((PALETTE[index] >> 16) & 0xFF) - ((rgb >> 16) & 0xFF);
+            int green = ((PALETTE[index] >> 8) & 0xFF) - ((rgb >> 8) & 0xFF);
+            int blue = (PALETTE[index] & 0xFF) - (rgb & 0xFF);
+            int distance = red * red + green * green + blue * blue;
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = index;
+            }
+        }
+        return 1 << best;
     }
 }

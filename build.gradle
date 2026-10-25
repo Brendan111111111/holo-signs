@@ -27,6 +27,7 @@ sourceSets.main.resources {
 }
 
 repositories {
+    mavenCentral()
     maven {
         name = 'ComputerCraft'
         url = 'https://maven.squiddev.cc'
@@ -39,6 +40,10 @@ repositories {
 base {
     archivesName = mod_id
 }
+
+// Test-only OpenComputers 26.1 build. It is used to compile the optional integration and is
+// staged into run/mods for the headless Screen Linker game test; it is never packaged.
+def ocTestJar = file('libs/opencomputers-neoforge-1.11.0.jar')
 
 // Mojang ships Java 25 to end users in 26.1.2, so mods should target Java 25.
 java.toolchain.languageVersion = JavaLanguageVersion.of(25)
@@ -114,7 +119,12 @@ neoForge {
 // "optional", meaning it will not be pulled by dependents of this mod.
 configurations {
     runtimeClasspath.extendsFrom localRuntime
+    // External compile dependencies for the OpenComputers API sources. Keeping this separate from
+    // sourceSets.main.compileClasspath lets the main classpath include the compiled API output
+    // without making the API compile depend on its own classes.
+    ocApiCompile
 }
+configurations.ocApiCompile.extendsFrom(configurations.compileClasspath)
 
 dependencies {
     // Example optional mod dependency with JEI
@@ -135,44 +145,68 @@ dependencies {
     // Example project dependency using a sister or child project:
     // implementation project(":myproject")
 
+    // Unit tests for pure Java parts of the projector terminal and update path.
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
+
     // Compile against CC:Tweaked's public API without bundling it into the core mod.
     compileOnly "cc.tweaked:cc-tweaked-${minecraft_version}-forge-api:${cct_version}"
 
-    // CC:Tweaked is present only in local development runs, never a required runtime dependency.
-    localRuntime "cc.tweaked:cc-tweaked-${minecraft_version}-forge:${cct_version}"
+    // CC:Tweaked is present only when its mod is installed, never a required runtime dependency.
+    // The integration is isolated behind CCIntegration so the core mod loads without the CC API.
 
-    // Optional OpenComputers: Modernized 26.1 API source and integration code.
-    if (project.findProperty('oc_compile_integrations') == 'true') {
-        def ocRoot = fileTree('.opencomputers-api').matching { include '*/settings.gradle' }.files
-                .find { it.parentFile.name.startsWith('Mantoku1-OpenComputers-NeoForge-26.1-') }?.parentFile
-        if (ocRoot == null) {
-            throw new GradleException('OpenComputers integration requires its 26.1 source archive extracted under .opencomputers-api/.')
+    // Optional OpenComputers: Modernized 26.1 integration. It is compiled when the 26.1 source
+    // archive is present, or against the test jar kept in libs/ so CI can build and run the
+    // Screen Linker game test without downloading an unpublished 26.1 build. Pass
+    // -Poc_compile_integrations=true to require the integration and fail when neither source is
+    // available. The integration classes are part of the mod jar; the OpenComputers jar itself is
+    // never packaged.
+    def ocArchiveRoot = fileTree('.opencomputers-api').matching { include '*/settings.gradle' }.files
+            .find { it.parentFile.name.startsWith('Mantoku1-OpenComputers-NeoForge-26.1-') }?.parentFile
+    def ocIntegrations = project.findProperty('oc_compile_integrations') == 'true' || ocArchiveRoot != null || ocTestJar.exists()
+    if (ocIntegrations) {
+        def ocRoot = ocArchiveRoot
+        if (ocRoot == null && !ocTestJar.exists()) {
+            throw new GradleException('OpenComputers integration requires its 26.1 source archive extracted under .opencomputers-api/ or the test jar at libs/opencomputers-neoforge-1.11.0.jar.')
         }
-        sourceSets {
-            // Compile the OC:M 26.1 API modules from source; they are never packaged into the mod jar.
-            ocApi {
-                java.srcDir(new File(ocRoot, 'api/src/main/java'))
-                java.srcDir(new File(ocRoot, 'neoforge-api/src/main/java'))
-                java.srcDir('src/optional/opencomputers/api-stubs')
+        // Compile the integration into the normal mod output. A separate source set would only
+        // reach the packaged jar, while Gradle's client/server runs load build/classes/java/main,
+        // which would leave the Screen Linker and the TextBuffer implementation unavailable.
+        sourceSets.main.java.srcDir('src/optional/opencomputers/java')
+        if (ocRoot != null) {
+            sourceSets {
+                // Compile the OC:M 26.1 API modules from source; they are never packaged into the mod jar.
+                ocApi {
+                    java.srcDir(new File(ocRoot, 'api/src/main/java'))
+                    java.srcDir(new File(ocRoot, 'neoforge-api/src/main/java'))
+                    java.srcDir('src/optional/opencomputers/api-stubs')
+                }
             }
-            ocIntegration {
-                java.srcDir('src/optional/opencomputers/java')
+            sourceSets.ocApi.compileClasspath = configurations.ocApiCompile
+            sourceSets.main.compileClasspath += sourceSets.ocApi.output
+            tasks.named('compileJava') {
+                dependsOn tasks.named('compileOcApiJava')
             }
-        }
-        sourceSets.ocApi.compileClasspath += sourceSets.main.compileClasspath
-        sourceSets.ocIntegration.compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath + sourceSets.ocApi.output
-        tasks.named('compileOcIntegrationJava') {
-            dependsOn tasks.named('compileOcApiJava')
-        }
-        tasks.named('jar') {
-            dependsOn tasks.named('ocIntegrationClasses')
-            from sourceSets.ocIntegration.output
+        } else {
+            compileOnly files(ocTestJar)
         }
     }
 
     // For more info:
     // http://www.gradle.org/docs/current/userguide/artifact_dependencies_tutorial.html
     // http://www.gradle.org/docs/current/userguide/dependency_management.html
+}
+
+// The game test server loads mods from run/mods. Stage the OpenComputers test jar there so a
+// clean CI checkout can run the Screen Linker test, and keep local runs using the same build.
+def stageOpenComputersTestMod = tasks.register('stageOpenComputersTestMod', Copy) {
+    if (ocTestJar.exists()) {
+        from ocTestJar
+        into layout.projectDirectory.dir('run/mods')
+    }
+}
+tasks.matching { it.name == 'runGameTestServer' }.configureEach {
+    dependsOn stageOpenComputersTestMod
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.
@@ -214,6 +248,10 @@ publishing {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
 }
 
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.
