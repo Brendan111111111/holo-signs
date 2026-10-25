@@ -18,8 +18,10 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
 
-      - name: Setup Gradle
+      - name: Setup Gradle 9.2.1
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.2.1'
 
       - name: Build with Gradle
-        run: ./gradlew build
+        run: gradle build

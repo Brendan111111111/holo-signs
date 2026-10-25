@@ -13,7 +13,8 @@ Standalone holographic signs and displays for Minecraft 26.1.2 on NeoForge, with
 
 - Minecraft Java Edition **26.1.2**
 - NeoForge **26.1.2.122**
-- Java **25** (toolchain required to build)
+- Java **25** (resolved automatically as a Gradle toolchain)
+- Gradle **9.2.1**
 
 ## Optional integrations
 
@@ -23,14 +24,16 @@ Standalone holographic signs and displays for Minecraft 26.1.2 on NeoForge, with
 ## Build
 
 ```bash
-./gradlew build          # core mod: standalone + CC:Tweaked
-./gradlew runServer      # dedicated-server smoke test (run/eula.txt must exist)
+gradle build          # core mod: standalone + CC:Tweaked
+gradle runServer      # dedicated-server smoke test (run/eula.txt must exist)
 ```
+
+The Gradle wrapper is not checked in. Run `gradle wrapper --gradle-version 9.2.1` once if you prefer the `./gradlew` launcher.
 
 OpenComputers integration (extract the OC 26.1 source archive so that `.opencomputers-api/Mantoku1-OpenComputers-NeoForge-26.1-*/` exists first):
 
 ```bash
-./gradlew -Poc_compile_integrations=true build
+gradle -Poc_compile_integrations=true build
 ```
 
 The resulting jar is `build/libs/holosigns-<version>.jar`. OC API sources are compiled from that archive and are not bundled into the jar; the OpenComputers classes are only present in the jar when the integration is enabled.
@@ -40,4 +43,4 @@ The resulting jar is `build/libs/holosigns-<version>.jar`. OC API sources are co
 - Core standalone workflow, CC:Tweaked integration, and the OpenComputers integration compile and jar against Minecraft 26.1.2 / NeoForge 26.1.2.122.
 - The dedicated server loads the mod and registers the projector block, item, block entity, and creative tab without errors.
 - Verified in a real 26.1.2 client: the projector model and texture load, the hologram renders above the block, and the eight-line editor opens and saves changes back to the display.
-- Talking to the block from an actual ComputerCraft or OpenComputers computer (Lua/OC component calls) has not been exercised in this workspace.
+- Driving the block from an actual ComputerCraft or OpenComputers computer (Lua/OC component calls) has not been exercised; the peripheral and component are only covered by compilation.
