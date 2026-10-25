@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": { "model": "holosigns:block/projector" },
+    "facing=east": { "model": "holosigns:block/projector", "y": 90 },
+    "facing=south": { "model": "holosigns:block/projector", "y": 180 },
+    "facing=west": { "model": "holosigns:block/projector", "y": 270 }
+  }
+}

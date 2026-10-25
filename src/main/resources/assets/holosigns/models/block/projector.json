@@ -1,0 +1,20 @@
+{
+  "textures": {
+    "side": "holosigns:block/projector_side",
+    "particle": "holosigns:block/projector_side"
+  },
+  "elements": [
+    {
+      "from": [1, 1, 2],
+      "to": [15, 15, 14],
+      "faces": {
+        "north": { "texture": "#side", "uv": [0, 0, 14, 14] },
+        "east": { "texture": "#side", "uv": [0, 0, 12, 14] },
+        "south": { "texture": "#side", "uv": [0, 0, 14, 14] },
+        "west": { "texture": "#side", "uv": [0, 0, 12, 14] },
+        "up": { "texture": "#side", "uv": [0, 0, 14, 12] },
+        "down": { "texture": "#side", "uv": [0, 0, 14, 12] }
+      }
+    }
+  ]
+}
