@@ -1,31 +1,43 @@
 # Holo Signs
 
-A standalone holographic signs and displays mod for **Minecraft: Java Edition 26.1.2** on **NeoForge**.
+Standalone holographic signs and displays for Minecraft 26.1.2 on NeoForge, with optional computer-mod control.
 
-## Project goals
+## What it does
 
-- Place configurable hologram projectors that render readable floating text and simple displays in the world.
-- Make signs useful out of the box: editing and displaying content must not require another mod, a computer, or a network.
-- Offer optional computer integrations so in-game programs can update displays dynamically.
-- Keep the core mod independent from optional integrations, so missing computer mods never prevent the base mod from loading.
+- Place a **Hologram Projector** block.
+- Right-click to open an in-game editor with up to **8 lines** of floating text.
+- Lines persist on the block entity and render floating above the projector.
+- Works standalone with no computer mods installed.
 
 ## Compatibility target
 
-- Minecraft: Java Edition **26.1.2**
-- NeoForge: **26.1.2.122** (the newest NeoForge build verified for the 26.1.2 Minecraft line when this project was created; NeoForge's overall latest release may target a different Minecraft version)
+- Minecraft Java Edition **26.1.2**
+- NeoForge **26.1.2.122**
+- Java **25** (toolchain required to build)
 
-## Planned integrations
+## Optional integrations
 
-- **ComputerCraft / CC:Tweaked** — optional peripheral for writing and controlling displays from Lua.
-- **OpenComputers** — optional integration for computer-driven displays. The intended target is the OpenComputers mod maintained by [@Mantoku1](https://github.com/Mantoku1); its repository and API still need to be confirmed before implementation.
-- **Other mods** — consider integrations where they provide a useful computer, automation, or display API, without adding mandatory dependencies to the core.
+- **CC:Tweaked / ComputerCraft** — generic peripheral (`holosigns:projector`) exposing `getLines`, `setLine`, `setLines`, and `clearLines` from Lua. Registered only when `computercraft` is present; never required.
+- **OpenComputers: Modernized** — `hologram_projector` component with `getLines`, `setLine`, `setLines`, and `clearLines` callbacks. The OC-capable block entity lives in `src/optional/opencomputers/java` and is compiled only with `-Poc_compile_integrations=true`; the core mod builds and runs without it. Target: `https://github.com/Mantoku1/OpenComputers-NeoForge-26.1`.
 
-The integration API and supported mod versions are not implemented or finalized yet. The core standalone sign workflow remains the baseline.
+## Build
 
-## Development status
+```bash
+./gradlew build          # core mod: standalone + CC:Tweaked
+./gradlew runServer      # dedicated-server smoke test (run/eula.txt must exist)
+```
 
-This repository is the project starting point. Features, the build setup, and integration compatibility are still to be implemented and tested.
+OpenComputers integration (extract the OC 26.1 source archive so that `.opencomputers-api/Mantoku1-OpenComputers-NeoForge-26.1-*/` exists first):
 
-## License
+```bash
+./gradlew -Poc_compile_integrations=true build
+```
 
-No license has been selected yet.
+The resulting jar is `build/libs/holosigns-<version>.jar`. OC API sources are compiled from that archive and are not bundled into the jar; the OpenComputers classes are only present in the jar when the integration is enabled.
+
+## Status
+
+- Core standalone workflow, CC:Tweaked integration, and the OpenComputers integration compile and jar against Minecraft 26.1.2 / NeoForge 26.1.2.122.
+- The dedicated server loads the mod and registers the projector block, item, block entity, and creative tab without errors.
+- Verified in a real 26.1.2 client: the projector model and texture load, the hologram renders above the block, and the eight-line editor opens and saves changes back to the display.
+- Talking to the block from an actual ComputerCraft or OpenComputers computer (Lua/OC component calls) has not been exercised in this workspace.
