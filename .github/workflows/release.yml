@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'v*'
+  # Manual runs exercise the build and the release jar check without publishing.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -49,16 +51,30 @@ jobs:
       - name: Headless game tests
         run: gradle runGameTestServer --console=plain
 
+      # A tag run checks the jar named by the tag; a manual run checks the jar named by
+      # mod_version, so the release path can be exercised without pushing a tag.
+      - name: Verify release jar
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="$(sed -n 's/^mod_version=//p' gradle.properties | tr -d '\r')"
+            echo "Manual run: verifying holosigns-$version.jar; no release will be published."
+          fi
+          jar="build/libs/holosigns-${version}.jar"
+          if [ ! -f "$jar" ]; then
+            echo "Expected $jar; does the version match mod_version in gradle.properties?" >&2
+            exit 1
+          fi
+          echo "Packaged $jar"
+
       - name: Create or update GitHub Release
+        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="${GITHUB_REF_NAME}"
           jar="build/libs/holosigns-${tag#v}.jar"
-          if [ ! -f "$jar" ]; then
-            echo "Expected $jar; does the tag match mod_version in gradle.properties?" >&2
-            exit 1
-          fi
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" "$jar" --clobber
           else
