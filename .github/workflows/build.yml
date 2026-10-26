@@ -56,21 +56,49 @@ jobs:
           rm -f run/gametest-results.xml
           gradle runGameTestServer --console=plain
 
-      # The XML report lists every test, not only failures, so the run log shows coverage.
+      # The XML report lists every test, not only failures, so both the run log and the
+      # job summary show coverage.
       - name: Print game test results
         if: always()
         run: |
           if [ ! -f run/gametest-results.xml ]; then
             echo "No game test report was written."
+            {
+              echo "### Game test results"
+              echo
+              echo "No game test report was written."
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           python3 - <<'PY'
+          import os
           import xml.etree.ElementTree as ET
+
+          rows = []
+          counts = {"PASSED": 0, "FAILED": 0, "SKIPPED": 0}
           for case in ET.parse("run/gametest-results.xml").getroot().iter("testcase"):
               failure = case.find("failure")
               skipped = case.find("skipped")
               status = "FAILED" if failure is not None else ("SKIPPED" if skipped is not None else "PASSED")
-              print(f"{status} {case.get('name')}")
+              counts[status] += 1
+              name = case.get("name", "unknown")
+              print(f"{status} {name}")
+              rows.append(f"| {status} | `{name}` |")
+
+          summary = "\n".join([
+              "### Game test results",
+              "",
+              "| Status | Test |",
+              "| --- | --- |",
+              *rows,
+              "",
+              f"{counts['PASSED']} passed, {counts['FAILED']} failed, {counts['SKIPPED']} skipped",
+              "",
+          ])
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary_path:
+              with open(summary_path, "a", encoding="utf-8") as summary_file:
+                  summary_file.write(summary)
           PY
 
       - name: Upload test reports
