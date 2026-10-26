@@ -12,9 +12,9 @@ permissions:
 
 jobs:
   release:
-    # ubuntu-latest starts migrating to Ubuntu 26 in October 2026; pin the image CI is
-    # tested against so a silent migration cannot change the build toolchain.
-    runs-on: ubuntu-24.04
+    # Pinned rather than ubuntu-latest so the image only changes when we choose. Ubuntu 26
+    # is where GitHub is migrating the floating label, so test it here deliberately.
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     steps:
       - name: Checkout repository
