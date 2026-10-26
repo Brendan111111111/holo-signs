@@ -50,8 +50,28 @@ jobs:
         run: gradle stageOpenComputersTestMod --console=plain
 
       # Starts a real headless GameTestServer, runs the projector game tests, then exits.
+      # The run config writes run/gametest-results.xml for the next step to print.
       - name: Headless game tests
-        run: gradle runGameTestServer --console=plain
+        run: |
+          rm -f run/gametest-results.xml
+          gradle runGameTestServer --console=plain
+
+      # The XML report lists every test, not only failures, so the run log shows coverage.
+      - name: Print game test results
+        if: always()
+        run: |
+          if [ ! -f run/gametest-results.xml ]; then
+            echo "No game test report was written."
+            exit 0
+          fi
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          for case in ET.parse("run/gametest-results.xml").getroot().iter("testcase"):
+              failure = case.find("failure")
+              skipped = case.find("skipped")
+              status = "FAILED" if failure is not None else ("SKIPPED" if skipped is not None else "PASSED")
+              print(f"{status} {case.get('name')}")
+          PY
 
       - name: Upload test reports
         if: failure()

@@ -76,6 +76,9 @@ neoForge {
         gameTestServer {
             type = "gameTestServer"
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            // Write a JUnit-like report so CI can list every test, including passing ones.
+            programArgument '--report'
+            programArgument file('run/gametest-results.xml').getAbsolutePath()
         }
 
         data {
