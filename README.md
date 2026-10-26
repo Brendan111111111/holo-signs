@@ -75,6 +75,14 @@ monitor instead of falling back to the saved lines. Background colours are store
 through the APIs but are not drawn; the hologram uses the teal display panel as its backing instead
 of per-cell terminal backgrounds.
 
+### Saved links re-bind after a restart
+
+A projector keeps its linked computer across a world reload. On load it tries to rejoin that
+computer's OpenComputers network right away; if the case's block entity or network node is not up
+yet, it retries from the server tick every **10 ticks (half a second)** until the link is back. No
+second Screen Linker click is needed, and the retry stops as soon as the projector and computer are
+on the same network.
+
 ## Performance and safety
 
 - Computer updates are batched. A graphics-card row write notifies the block entity once, not once
