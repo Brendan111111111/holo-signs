@@ -123,14 +123,18 @@ gradle build          # core mod: standalone + CC:Tweaked (+ OpenComputers when 
 gradle test           # unit tests for terminal grid scaling and the pending-update queue
 gradle stageOpenComputersTestMod  # install the test-only OpenComputers jar into run/mods
 gradle runGameTestServer  # tick flush, projection occlusion, and the OpenComputers link test
+gradle runReleaseSmoke  # launch the packaged jar alone in build/release-smoke and run its game tests
 gradle runServer      # dedicated-server smoke test (run/eula.txt must exist)
 ```
 
-CI runs `gradle build` (which includes the unit tests) and `gradle runGameTestServer` on every
-push and pull request. The game-test job stages the OpenComputers test jar from `libs/` into
-`run/mods` first, so the Screen Linker test runs there too. Every run attaches the built mod jar,
+CI runs `gradle build` (which includes the unit tests), `gradle runGameTestServer`, and
+`gradle runReleaseSmoke` on every push and pull request. The game-test job stages the
+OpenComputers test jar from `libs/` into `run/mods` first, so the Screen Linker test runs there
+too. The release smoke test goes the other way: it copies only the packaged jar into a throwaway
+game directory, clears `fml.modFolders`, and fails if the mod is not loaded from that jar. Every run attaches the built mod jar,
 and failed runs upload the test report, server log and crash reports. Pushing a `v<version>` tag
-(matching `mod_version`) runs the same checks and publishes the jar in a GitHub Release. Record the
+(matching `mod_version`) runs the same checks plus the packaged-jar smoke test and publishes the
+jar in a GitHub Release. Record the
 changes under that version in [CHANGELOG.md](CHANGELOG.md) before tagging; the publishing steps live
 in [.github/workflows/release.yml](.github/workflows/release.yml).
 

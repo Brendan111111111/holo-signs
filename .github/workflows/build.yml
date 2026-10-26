@@ -121,6 +121,11 @@ jobs:
           print(f"Wrote {len(rows)} test results to the job summary ({after - before} bytes).")
           PY
 
+      # Launches build/libs/holosigns-<version>.jar on its own in build/release-smoke and runs the
+      # mod's game tests from it, so packaging breakage is caught on every push.
+      - name: Packaged jar smoke test
+        run: gradle runReleaseSmoke --console=plain
+
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@v7
@@ -130,4 +135,5 @@ jobs:
             build/reports/tests/test
             run/logs
             run/crash-reports
+            build/release-smoke/logs
           if-no-files-found: ignore

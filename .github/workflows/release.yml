@@ -70,6 +70,11 @@ jobs:
           fi
           echo "Packaged $jar"
 
+      # Launch the jar that is about to be published, with nothing else installed, before any
+      # release exists: a packaging failure fails the run instead of shipping a broken download.
+      - name: Smoke test packaged jar
+        run: gradle runReleaseSmoke --console=plain
+
       - name: Create or update GitHub Release
         if: github.ref_type == 'tag'
         env:

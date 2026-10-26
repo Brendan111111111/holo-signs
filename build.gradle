@@ -81,6 +81,18 @@ neoForge {
             programArgument file('run/gametest-results.xml').getAbsolutePath()
         }
 
+        // Runs the packaged jar, and nothing else, in a throwaway game directory. The dev class
+        // folders are dropped from fml.modFolders, so the mod can only come from the jar staged in
+        // build/release-smoke/mods; the game tests prove it started and works from that artifact.
+        releaseSmoke {
+            type = "gameTestServer"
+            gameDirectory = file('build/release-smoke')
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            systemProperty 'fml.modFolders', ''
+            programArgument '--report'
+            programArgument file('build/release-smoke/gametest-results.xml').getAbsolutePath()
+        }
+
         data {
             clientData()
             // example of overriding the workingDirectory set in configureEach above, uncomment if you want to use it
@@ -206,6 +218,45 @@ dependencies {
     // For more info:
     // http://www.gradle.org/docs/current/userguide/artifact_dependencies_tutorial.html
     // http://www.gradle.org/docs/current/userguide/dependency_management.html
+}
+
+// The release smoke test gets a clean game directory: Sync empties build/release-smoke of the
+// previous world, logs and reports, then stages only the packaged jar in its mods folder. It must
+// run every time, or a second run would reuse the world it is supposed to create from scratch.
+def stageReleaseSmokeJar = tasks.register('stageReleaseSmokeJar', Sync) {
+    dependsOn tasks.named('jar')
+    into layout.buildDirectory.dir('release-smoke')
+    from(tasks.named('jar')) {
+        into 'mods'
+    }
+    doNotTrackState('The smoke test needs a fresh game directory on every run.')
+}
+tasks.matching { it.name == 'runReleaseSmoke' }.configureEach {
+    dependsOn stageReleaseSmokeJar
+    def packagedJarName = tasks.named('jar').flatMap { it.archiveFileName }
+    def smokeDebugLog = layout.buildDirectory.file('release-smoke/logs/debug.log')
+    def smokeConsoleLog = layout.buildDirectory.file('release-smoke/logs/latest.log')
+    def devClasses = layout.buildDirectory.dir('classes/java/main')
+    // The run already fails when a game test fails. This checks the other half: that the tests ran
+    // against the jar in the game directory, not the dev class folders during a debug run.
+    doLast {
+        def jarName = packagedJarName.get()
+        def debugLog = smokeDebugLog.get().asFile.text
+        def consoleLog = smokeConsoleLog.get().asFile.text
+        def problems = []
+        if (!debugLog.contains("Found valid mod file ${jarName}")) {
+            problems.add("FML never discovered ${jarName} in build/release-smoke/mods.")
+        }
+        if (!consoleLog.contains("jar(mods/${jarName})")) {
+            problems.add("The mod list does not show ${jarName} loaded from mods/.")
+        }
+        if (debugLog.contains(devClasses.get().asFile.absolutePath)) {
+            problems.add('The smoke run loaded the dev class folders instead of the packaged jar.')
+        }
+        if (!problems.isEmpty()) {
+            throw new GradleException('Release smoke test did not load the packaged jar:\n - ' + problems.join('\n - '))
+        }
+    }
 }
 
 // The game test server loads mods from run/mods. Stage the OpenComputers test jar there so a
