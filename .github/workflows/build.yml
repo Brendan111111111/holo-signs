@@ -61,18 +61,26 @@ jobs:
       - name: Print game test results
         if: always()
         run: |
+          if [ -z "${GITHUB_STEP_SUMMARY:-}" ]; then
+            echo "::error::GITHUB_STEP_SUMMARY is not set, so the game test results cannot be published."
+            exit 1
+          fi
           if [ ! -f run/gametest-results.xml ]; then
-            echo "No game test report was written."
+            echo "::error::No game test report was written to run/gametest-results.xml."
             {
               echo "### Game test results"
               echo
               echo "No game test report was written."
             } >> "$GITHUB_STEP_SUMMARY"
-            exit 0
+            exit 1
           fi
           python3 - <<'PY'
           import os
+          import sys
           import xml.etree.ElementTree as ET
+
+          summary_path = os.environ["GITHUB_STEP_SUMMARY"]
+          before = os.path.getsize(summary_path) if os.path.exists(summary_path) else 0
 
           rows = []
           counts = {"PASSED": 0, "FAILED": 0, "SKIPPED": 0}
@@ -85,6 +93,10 @@ jobs:
               print(f"{status} {name}")
               rows.append(f"| {status} | `{name}` |")
 
+          if not rows:
+              print("::error::The game test report contains no test cases.", file=sys.stderr)
+              raise SystemExit(1)
+
           summary = "\n".join([
               "### Game test results",
               "",
@@ -95,10 +107,14 @@ jobs:
               f"{counts['PASSED']} passed, {counts['FAILED']} failed, {counts['SKIPPED']} skipped",
               "",
           ])
-          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
-          if summary_path:
-              with open(summary_path, "a", encoding="utf-8") as summary_file:
-                  summary_file.write(summary)
+          with open(summary_path, "a", encoding="utf-8") as summary_file:
+              summary_file.write(summary)
+
+          after = os.path.getsize(summary_path) if os.path.exists(summary_path) else 0
+          if after <= before:
+              print("::error::The job summary file is empty or did not receive the game test results.", file=sys.stderr)
+              raise SystemExit(1)
+          print(f"Wrote {len(rows)} test results to the job summary ({after - before} bytes).")
           PY
 
       - name: Upload test reports
