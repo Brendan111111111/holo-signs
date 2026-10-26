@@ -170,9 +170,18 @@ instead of falling back to the plain projector.
   installs a graphics card in the case, selects the case with the Screen Linker and right-clicks
   the projector. It checks the projector switches to monitor mode and that the graphics card's
   bound screen is the projector's `TextBuffer`. CI stages the test jar from `libs/` into `run/mods`
-  for this test; a headless run without that mod still executes the other three tests.
+  so this test runs on every push; a headless run without that mod still executes the remaining
+  tests.
+- The `holosigns:projector_oc_relink` game test covers a world reload: it links a projector to a
+  real OpenComputers case, replaces the case, and checks the projector rejoins the computer's
+  network without another Screen Linker click. It then installs a graphics card and checks the
+  card binds the projector's `TextBuffer`. The projector retries its saved link from the server
+  tick every 10 ticks, so a case that loads after the projector still reconnects.
 - The optional OpenComputers classes are compiled into the main mod output, so `gradle runClient`
   and `gradle runServer` get the same projector block entity as the jar. Previously they loaded
   only `build/classes/java/main`, fell back to the plain block entity, and a Screen Linker click
   had no integration to handle it. A click that still cannot be handled now opens the editor
   rather than being swallowed.
+- CI is green on `main`: the latest Build runs, including the one for the reconnect fix, passed
+  `gradle build`, the staged OpenComputers test jar, and `gradle runGameTestServer` with the link
+  and relink tests. The reconnect fix and its README note are pushed as `4d1e99c` and `455acd0`.
