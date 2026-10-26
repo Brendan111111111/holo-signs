@@ -177,6 +177,11 @@ instead of falling back to the plain projector.
   network without another Screen Linker click. It then installs a graphics card and checks the
   card binds the projector's `TextBuffer`. The projector retries its saved link from the server
   tick every 10 ticks, so a case that loads after the projector still reconnects.
+- The `holosigns:projector_oc_relink_unloaded` game test covers a chunk unload: it saves the linked
+  projector's block entity data, removes it, replaces the linked case while the projector is
+  unloaded, and loads the saved data into the fresh block entity. It checks the saved link and
+  monitor mode survive, the projector rejoins the replacement case's network, and a newly
+  installed graphics card binds the reloaded projector.
 - The optional OpenComputers classes are compiled into the main mod output, so `gradle runClient`
   and `gradle runServer` get the same projector block entity as the jar. Previously they loaded
   only `build/classes/java/main`, fell back to the plain block entity, and a Screen Linker click

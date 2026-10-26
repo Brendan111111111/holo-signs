@@ -15,6 +15,7 @@ import net.minecraft.gametest.framework.TestData;
 import net.minecraft.gametest.framework.TestEnvironmentDefinition;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.Identifier;
+import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
@@ -25,6 +26,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.TagValueInput;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.IEventBus;
@@ -47,11 +49,13 @@ import java.util.function.Consumer;
 public final class ProjectorOpenComputersGameTest {
     private static final Identifier TEST = HoloSigns.id("projector_oc_bind");
     private static final Identifier RELINK_TEST = HoloSigns.id("projector_oc_relink");
+    private static final Identifier UNLOADED_RELINK_TEST = HoloSigns.id("projector_oc_relink_unloaded");
     private static final Identifier ENVIRONMENT = HoloSigns.id("projector_oc_bind");
     private static final Identifier STRUCTURE = HoloSigns.id("projector_platform");
 
     private static final int MAX_TICKS = 40;
     private static final int RELINK_MAX_TICKS = 60;
+    private static final int UNLOADED_RELINK_MAX_TICKS = 60;
 
     private static final DeferredRegister<Consumer<GameTestHelper>> TEST_FUNCTIONS =
             DeferredRegister.create(BuiltInRegistries.TEST_FUNCTION, HoloSigns.MOD_ID);
@@ -59,6 +63,9 @@ public final class ProjectorOpenComputersGameTest {
             TEST_FUNCTIONS.register("projector_oc_bind", () -> ProjectorOpenComputersGameTest::run);
     private static final DeferredHolder<Consumer<GameTestHelper>, Consumer<GameTestHelper>> RELINK_TEST_FUNCTION =
             TEST_FUNCTIONS.register("projector_oc_relink", () -> ProjectorOpenComputersGameTest::runRelink);
+    private static final DeferredHolder<Consumer<GameTestHelper>, Consumer<GameTestHelper>> UNLOADED_RELINK_TEST_FUNCTION =
+            TEST_FUNCTIONS.register("projector_oc_relink_unloaded",
+                    () -> ProjectorOpenComputersGameTest::runUnloadedRelink);
 
     private ProjectorOpenComputersGameTest() {
     }
@@ -76,6 +83,8 @@ public final class ProjectorOpenComputersGameTest {
                 new TestData<>(environment, STRUCTURE, MAX_TICKS, 0, true)));
         event.registerTest(RELINK_TEST, new FunctionGameTestInstance(RELINK_TEST_FUNCTION.getKey(),
                 new TestData<>(environment, STRUCTURE, RELINK_MAX_TICKS, 0, true)));
+        event.registerTest(UNLOADED_RELINK_TEST, new FunctionGameTestInstance(UNLOADED_RELINK_TEST_FUNCTION.getKey(),
+                new TestData<>(environment, STRUCTURE, UNLOADED_RELINK_MAX_TICKS, 0, true)));
     }
 
     private static void run(GameTestHelper helper) {
@@ -192,6 +201,88 @@ public final class ProjectorOpenComputersGameTest {
                     "the graphics card should be installed on the computer's network");
             helper.assertTrue(boundBuffer(graphicsCardEnvironment) == projector,
                     "the restored link should let the graphics card bind the projector");
+            helper.succeed();
+        });
+    }
+
+    /**
+     * Reproduces a chunk unload. Unloading a chunk drops the projector's block entity, and a later
+     * reload recreates it from the chunk's saved data. Here the saved tag is captured, the block is
+     * removed, the linked case is replaced while the projector is gone, and the tag is loaded into
+     * the fresh block entity. The restored link must find the replacement case again.
+     */
+    private static void runUnloadedRelink(GameTestHelper helper) {
+        BlockPos casePos = new BlockPos(1, 1, 1);
+        BlockPos projectorPos = new BlockPos(2, 1, 1);
+        CompoundTag[] savedProjector = new CompoundTag[1];
+        helper.setBlock(casePos, openComputersBlock("case1"));
+        helper.setBlock(projectorPos, HoloSigns.PROJECTOR.get());
+
+        helper.runAtTickTime(1, () -> {
+            BlockEntity caseEntity = helper.getBlockEntity(casePos, BlockEntity.class);
+            helper.assertTrue(caseEntity instanceof Case,
+                    "the OpenComputers case should provide its computer block entity");
+            ProjectorBlockEntity projector = helper.getBlockEntity(projectorPos, ProjectorBlockEntity.class);
+            helper.assertTrue(projector instanceof OCProjectorBlockEntity,
+                    "the projector should use its OpenComputers TextBuffer block entity");
+            OCProjectorBlockEntity ocProjector = (OCProjectorBlockEntity) projector;
+
+            Player player = helper.makeMockPlayer(GameType.CREATIVE);
+            player.setItemInHand(InteractionHand.MAIN_HAND, selectedLinker(helper.absolutePos(casePos)));
+            BlockPos absoluteProjector = helper.absolutePos(projectorPos);
+            helper.useBlock(projectorPos, player, new BlockHitResult(
+                    Vec3.atCenterOf(absoluteProjector), Direction.NORTH, absoluteProjector, true));
+            helper.assertTrue(ocProjector.hasComputerLink(),
+                    "the Screen Linker should save the projector-to-computer link");
+
+            // The chunk save writes this tag before the chunk unload drops the block entity.
+            savedProjector[0] = ocProjector.saveWithFullMetadata(helper.getLevel().registryAccess());
+            helper.assertTrue(savedProjector[0].getIntArray("linkedCase").map(link -> link.length == 3).orElse(false),
+                    "the saved projector data should contain the linked case position");
+            helper.setBlock(projectorPos, Blocks.AIR);
+        });
+
+        // Replace the computer while the projector's chunk is not loaded.
+        helper.runAtTickTime(5, () -> {
+            helper.setBlock(casePos, Blocks.AIR);
+            helper.setBlock(casePos, openComputersBlock("case1"));
+        });
+
+        helper.runAtTickTime(10, () -> {
+            helper.setBlock(projectorPos, HoloSigns.PROJECTOR.get());
+            BlockEntity reloadedEntity = helper.getBlockEntity(projectorPos, BlockEntity.class);
+            helper.assertTrue(reloadedEntity instanceof OCProjectorBlockEntity,
+                    "the reloaded projector should use its OpenComputers TextBuffer block entity");
+            OCProjectorBlockEntity reloaded = (OCProjectorBlockEntity) reloadedEntity;
+            helper.assertFalse(reloaded.hasComputerLink(),
+                    "a freshly created block entity should start without the saved link");
+            reloaded.loadWithComponents(TagValueInput.create(
+                    ProblemReporter.DISCARDING, helper.getLevel().registryAccess(), savedProjector[0]));
+            helper.assertTrue(reloaded.hasComputerLink(),
+                    "loading the chunk should restore the projector's saved link");
+            helper.assertTrue(reloaded.getMode() == DisplayMode.MONITOR,
+                    "loading the chunk should restore monitor mode");
+        });
+
+        helper.runAtTickTime(20, () -> {
+            Case computer = (Case) helper.getBlockEntity(casePos, BlockEntity.class);
+            OCProjectorBlockEntity projector = (OCProjectorBlockEntity) helper.getBlockEntity(
+                    projectorPos, ProjectorBlockEntity.class);
+            helper.assertTrue(projector.node() != null && computer.node() != null,
+                    "the reloaded projector and replacement case should both have network nodes");
+            helper.assertTrue(projector.node().network() == computer.node().network(),
+                    "the reloaded projector should rejoin the replacement case's network");
+            computer.setItem(0, new ItemStack(openComputersItem("graphicscard1")));
+        });
+        helper.runAtTickTime(30, () -> {
+            Case computer = (Case) helper.getBlockEntity(casePos, BlockEntity.class);
+            OCProjectorBlockEntity projector = (OCProjectorBlockEntity) helper.getBlockEntity(
+                    projectorPos, ProjectorBlockEntity.class);
+            Object graphicsCardEnvironment = findGraphicsCard(computer);
+            helper.assertTrue(graphicsCardEnvironment != null,
+                    "the graphics card should be installed on the replacement case's network");
+            helper.assertTrue(boundBuffer(graphicsCardEnvironment) == projector,
+                    "the reloaded link should let the graphics card bind the projector");
             helper.succeed();
         });
     }
