@@ -116,6 +116,14 @@ neoForge {
     }
 }
 
+// Gradle otherwise forces its own platform encoding (windows-1252 here) onto the game JVM, and it
+// appends that after the run's VM arguments. A normal launcher leaves Java's UTF-8 default in place,
+// and OpenComputers decodes Lua strings with the default charset, so the dev runs need UTF-8 too or
+// standard OpenOS box borders arrive as mojibake in the dev client only.
+tasks.withType(JavaExec).configureEach {
+    defaultCharacterEncoding = 'UTF-8'
+}
+
 // Sets up a dependency configuration called 'localRuntime'.
 // This configuration should be used instead of 'runtimeOnly' to declare
 // a dependency that will be present for runtime testing but that is

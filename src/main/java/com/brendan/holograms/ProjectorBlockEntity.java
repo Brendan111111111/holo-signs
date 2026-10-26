@@ -8,6 +8,7 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Items;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
@@ -82,7 +83,7 @@ public class ProjectorBlockEntity extends BlockEntity {
         if (index < 0 || index >= MAX_LINES || value == null) return false;
         while (lines.size() <= index) lines.add("");
         lines.set(index, sanitize(value));
-        trimTrailingEmptyLines();
+        trimTrailingEmptyLines(lines);
         mode = DisplayMode.LINES;
         textVersion++;
         markUpdated();
@@ -97,8 +98,14 @@ public class ProjectorBlockEntity extends BlockEntity {
             if (line == null) return;
             normalized.add(sanitize(line));
         }
+        trimTrailingEmptyLines(normalized);
+        // The editor sends every field on save, including text the player never touched. Switching
+        // to the authored lines unconditionally therefore ended a linked computer's monitor view
+        // whenever any other setting (size, distance, colour, facing) was changed, which looked
+        // like the link had died until the computer wrote again. Only an actual text edit takes the
+        // hologram back from the computer.
+        if (normalized.equals(lines)) return;
         lines = normalized;
-        trimTrailingEmptyLines();
         mode = DisplayMode.LINES;
         textVersion++;
         markUpdated();
@@ -255,6 +262,44 @@ public class ProjectorBlockEntity extends BlockEntity {
 
     public TerminalBuffer getTerminal() { return terminal; }
 
+    /**
+     * One input event from the terminal screen that opens when a player clicks the floating
+     * hologram panel. The ordinal is what travels over the wire.
+     */
+    public enum TerminalAction {
+        KEY_DOWN,
+        KEY_UP,
+        CLIPBOARD,
+        MOUSE_DOWN,
+        MOUSE_DRAG,
+        MOUSE_UP,
+        MOUSE_SCROLL,
+        REFRESH;
+
+        public static @Nullable TerminalAction byId(int id) {
+            TerminalAction[] values = values();
+            return id >= 0 && id < values.length ? values[id] : null;
+        }
+    }
+
+    /**
+     * Whether a computer is bound to this projector, so clicking the projected panel can open a
+     * terminal and type into that computer. The base projector has no computer integrations.
+     */
+    public boolean isComputerLinked() {
+        return false;
+    }
+
+    /**
+     * Forwards one event from the terminal screen to the bound computer. Implemented by the
+     * optional computer integration; the base projector simply refuses the input so the click
+     * falls back to the normal display behaviour.
+     */
+    public boolean handleTerminalInput(Player player, TerminalAction action, char character, int code,
+                                       double x, double y, int button, @Nullable String text) {
+        return false;
+    }
+
     public void openEditor(ServerPlayer player) {
         EditDisplayPayload.sendOpen(player, worldPosition, lines, getFacing(), distance,
                 sizePercent, backgroundColor, camouflageId(camouflage));
@@ -276,15 +321,25 @@ public class ProjectorBlockEntity extends BlockEntity {
         return clean.toString();
     }
 
-    private void trimTrailingEmptyLines() {
-        while (!lines.isEmpty() && lines.get(lines.size() - 1).isEmpty()) lines.remove(lines.size() - 1);
+    private static void trimTrailingEmptyLines(List<String> target) {
+        while (!target.isEmpty() && target.get(target.size() - 1).isEmpty()) target.remove(target.size() - 1);
     }
 
-    private void markUpdated() {
-        setChanged();
-        if (level instanceof ServerLevel) {
-            PENDING_UPDATES.add(this);
+    protected void markUpdated() {
+        if (!(level instanceof ServerLevel serverLevel)) {
+            setChanged();
+            return;
         }
+        // Computer integrations write from the computer's own Lua thread. Touching the level there
+        // makes Minecraft schedule work on the server thread and wait for it, which deadlocks when
+        // the server thread is saving that very computer. Queue the update instead; the end-of-tick
+        // flush marks the chunk dirty and sends the block update on the server thread.
+        if (!serverLevel.getServer().isSameThread()) {
+            PENDING_UPDATES.add(this);
+            return;
+        }
+        setChanged();
+        PENDING_UPDATES.add(this);
     }
 
     /**
@@ -308,6 +363,8 @@ public class ProjectorBlockEntity extends BlockEntity {
         for (ProjectorBlockEntity projector : pending) {
             if (projector.isRemoved()) continue;
             if (projector.level instanceof ServerLevel serverLevel) {
+                // Off-thread writes could only queue the update, so the dirty mark happens here.
+                projector.setChanged();
                 BlockState state = projector.getBlockState();
                 serverLevel.sendBlockUpdated(projector.getBlockPos(), state, state, Block.UPDATE_CLIENTS);
             }
@@ -330,7 +387,7 @@ public class ProjectorBlockEntity extends BlockEntity {
                 if (lines.size() == MAX_LINES) break;
                 lines.add(sanitize(line));
             }
-            trimTrailingEmptyLines();
+            trimTrailingEmptyLines(lines);
             textVersion++;
 
             distance = Math.max(MIN_DISTANCE, Math.min(MAX_DISTANCE, input.getIntOr("distance", DEFAULT_DISTANCE)));

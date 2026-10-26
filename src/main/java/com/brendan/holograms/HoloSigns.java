@@ -3,6 +3,7 @@ package com.brendan.holograms;
 import com.brendan.holograms.compat.ProjectorLinkHook;
 import net.minecraft.core.BlockPos;
 import com.brendan.holograms.network.EditDisplayPayload;
+import com.brendan.holograms.network.TerminalInputPayload;
 import net.minecraft.core.Direction;
 import net.neoforged.neoforge.capabilities.BlockCapability;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
@@ -76,6 +77,7 @@ public final class HoloSigns {
         BLOCK_ENTITIES.register(modEventBus);
         CREATIVE_TABS.register(modEventBus);
         modEventBus.addListener(EditDisplayPayload::register);
+        modEventBus.addListener(TerminalInputPayload::register);
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::registerCapabilities);
         NeoForge.EVENT_BUS.addListener(ProjectorBlockEntity::flushPendingUpdates);

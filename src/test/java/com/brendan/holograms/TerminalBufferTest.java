@@ -13,8 +13,9 @@ class TerminalBufferTest {
         assertEquals(8, TerminalBuffer.columnsForSizePercent(25));
         assertEquals(3, TerminalBuffer.rowsForSizePercent(25));
 
-        assertEquals(24, TerminalBuffer.columnsForSizePercent(100));
-        assertEquals(10, TerminalBuffer.rowsForSizePercent(100));
+        // A full-size hologram has a standard monitor grid: 32x12 also fits OpenOS' boot box.
+        assertEquals(32, TerminalBuffer.columnsForSizePercent(100));
+        assertEquals(12, TerminalBuffer.rowsForSizePercent(100));
 
         assertEquals(32, TerminalBuffer.columnsForSizePercent(300));
         assertEquals(12, TerminalBuffer.rowsForSizePercent(300));

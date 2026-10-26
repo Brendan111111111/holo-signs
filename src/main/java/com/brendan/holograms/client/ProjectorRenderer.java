@@ -6,6 +6,8 @@ import com.brendan.holograms.ProjectorBlock;
 import com.brendan.holograms.ProjectorBlockEntity;
 import com.brendan.holograms.TerminalBuffer;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.client.renderer.block.model.BlockDisplayContext;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.world.level.block.state.BlockState;
@@ -186,27 +188,41 @@ public final class ProjectorRenderer implements BlockEntityRenderer<ProjectorBlo
         for (int row = 0; row < rows; row++) {
             String text = row < state.monitorRows.size() ? state.monitorRows.get(row) : "";
             float y = -totalHeight / 2.0F + row * CELL_HEIGHT;
-            // One glyph per cell keeps columns aligned exactly like a monitor, even though the
-            // vanilla font is proportional.
             for (int column = 0; column < columns; column++) {
                 char character = column < text.length() ? text.charAt(column) : ' ';
-                if (character == ' ') continue;
-                int cell = row * columns + column;
-                int color = cell < state.monitorForeground.length ? state.monitorForeground[cell] & 0xFFFFFF : 0xFFFFFF;
+                if (character == ' ' || character == 0) continue;
+                int cellColor = monitorColor(state, row, column, columns);
+                float x = -totalWidth / 2.0F + column * CELL_WIDTH;
+                // Frame characters are drawn as lines: the font's unicode fallback is wider and
+                // taller than a cell, which made bars bleed out of the panel and through words.
+                if (TerminalGlyphs.drawWorld(poseStack, textCollector, character, x, y,
+                        CELL_WIDTH, CELL_HEIGHT, 0xFF000000 | cellColor)) {
+                    continue;
+                }
+                // One glyph per cell, centred in it. Placing words at their natural width left
+                // several cells of gap between words; stretching them into their cells distorted
+                // every letter. Keeping the cell pitch exact makes a space always one cell wide.
+                String glyph = String.valueOf(character);
+                int glyphWidth = this.font.width(glyph);
                 textCollector.submitText(
                         poseStack,
-                        -totalWidth / 2.0F + column * CELL_WIDTH,
+                        x + Math.max(0.0F, (CELL_WIDTH - glyphWidth) / 2.0F),
                         y,
-                        Component.literal(String.valueOf(character)).getVisualOrderText(),
+                        Component.literal(glyph).getVisualOrderText(),
                         false,
                         Font.DisplayMode.POLYGON_OFFSET,
                         state.lightCoords,
-                        0xFF000000 | color,
+                        0xFF000000 | cellColor,
                         0,
                         0
                 );
             }
         }
+    }
+
+    private static int monitorColor(ProjectorRenderState state, int row, int column, int columns) {
+        int cell = row * columns + column;
+        return cell < state.monitorForeground.length ? state.monitorForeground[cell] & 0xFFFFFF : 0xFFFFFF;
     }
 
     /**
@@ -258,6 +274,41 @@ public final class ProjectorRenderer implements BlockEntityRenderer<ProjectorBlo
         buffer.addVertex(pose, minX, maxY, 0.0F).setColor(color);
         buffer.addVertex(pose, maxX, maxY, 0.0F).setColor(color);
         buffer.addVertex(pose, maxX, minY, 0.0F).setColor(color);
+    }
+
+    /**
+     * Distance along a look ray at which the floating panel is hit, or {@code -1} for a miss.
+     * <p>
+     * The hologram is billboarded to the camera, so its panel is perpendicular to the view ray:
+     * the ray's closest approach to the panel centre is the hit point, and the in-plane offset
+     * against the panel's scaled half-size decides whether the click landed on it. The clickable
+     * area includes the border, not just the dark face, so the edge is easy to hit.
+     */
+    public static double panelHitDistance(ProjectorBlockEntity projector, Vec3 eye, Vec3 look, double reach) {
+        if (projector.getMode() != DisplayMode.MONITOR) return -1.0;
+        Direction facing = projector.getFacing();
+        BlockPos pos = projector.getBlockPos();
+        Vec3 center = new Vec3(
+                pos.getX() + 0.5 + facing.getStepX() * (0.5 + projector.getDistance()),
+                pos.getY() + 0.5 + facing.getStepY() * (0.5 + projector.getDistance()),
+                pos.getZ() + 0.5 + facing.getStepZ() * (0.5 + projector.getDistance()));
+        double hit = center.subtract(eye).dot(look);
+        if (hit <= 0.0 || hit > reach) return -1.0;
+
+        Vec3 offset = eye.add(look.scale(hit)).subtract(center);
+        Vec3 right = look.cross(new Vec3(0.0, 1.0, 0.0));
+        right = right.lengthSqr() < 1.0E-6 ? new Vec3(1.0, 0.0, 0.0) : right.normalize();
+        Vec3 up = right.cross(look).normalize();
+
+        float scale = WORLD_SCALE * Math.max(0.01F, projector.getSizePercent() / 100.0F);
+        TerminalBuffer terminal = projector.getTerminal();
+        double halfWidth = (terminal.getColumns() * CELL_WIDTH + (PANEL_PADDING + PANEL_BORDER) * 2.0) * scale / 2.0;
+        double halfHeight = (terminal.getRows() * CELL_HEIGHT + (PANEL_PADDING + PANEL_BORDER) * 2.0) * scale / 2.0;
+        // A small tolerance makes the thin border easier to aim at without covering empty air.
+        double tolerance = 0.1;
+        if (Math.abs(offset.dot(right)) > halfWidth + tolerance) return -1.0;
+        if (Math.abs(offset.dot(up)) > halfHeight + tolerance) return -1.0;
+        return hit;
     }
 
     @Override

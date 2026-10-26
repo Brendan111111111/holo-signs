@@ -11,6 +11,8 @@
   "screen.holosigns.projector.camo": "Camo",
   "screen.holosigns.projector.camo_hint": "Click with a block in hand to camouflage. Right-click to clear.",
   "screen.holosigns.projector.camo_invalid": "Hold a regular block to use as camouflage.",
+  "screen.holosigns.terminal.title": "Hologram Terminal",
+  "screen.holosigns.terminal.hint": "ESC to close  ·  Ctrl+V to paste",
   "direction.holosigns.up": "Up",
   "direction.holosigns.down": "Down",
   "direction.holosigns.north": "North",

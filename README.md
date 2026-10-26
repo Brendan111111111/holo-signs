@@ -61,19 +61,34 @@ projector as a screen instead of as a sign.
     bind the hologram to that computer over the same 64-block range as a normal screen.
     Sneak-right-click the projector with the linker to unbind it. The projector keeps the link
     across world reloads.
+  - **Right-click the floating panel to type into the computer.** A linked projector's hologram
+    has no block behind it, so the panel itself is the click target: a view-ray test against the
+    billboarded panel opens a terminal screen that shows the same grid, and every key, mouse and
+    clipboard event is forwarded to the bound computer. The projector then receives the usual
+    OpenComputers key and touch events, so software that reads the keyboard or screen works exactly
+    as it does on a monitor. The panel reports the computer's keyboard as its own, which is what the
+    terminal checks before accepting a key, so typing works even when the hologram is 64 blocks from
+    the keyboard. Opening the terminal also copies the screen the graphics card is currently drawing
+    on, so a shell that started before the projector was linked fills the panel instead of staying
+    black; later output keeps arriving through OpenComputers' screen mirroring. The click is only
+    taken when the projector is actually linked and in monitor mode, and never while sneaking, so
+    normal building and the Screen Linker keep working.
   - A linker click never opens the projector editor while the integration is available. The click
     is intercepted in the main jar before the block interaction runs, so it works even while
     sneaking (needed for unbinding). If this build has no OpenComputers integration, or the
     installed OpenComputers version cannot be bound, the click falls back to the normal block
     interaction so the editor still opens instead of leaving a dead right-click.
+  - The projector block itself still opens the editor, so the display can be switched back to the
+    authored lines after the computer has been unlinked.
   - The OC-capable block entity lives in `src/optional/opencomputers/java`; the core mod builds and
     runs without it. Target: `https://github.com/Mantoku1/OpenComputers-NeoForge-26.1`.
 
 Linking a computer or a computer write switches the hologram to monitor mode automatically; the
 editor or `setMode("lines")` switches it back to the authored lines. A blank terminal stays a blank
-monitor instead of falling back to the saved lines. Background colours are stored and reported
-through the APIs but are not drawn; the hologram uses the teal display panel as its backing instead
-of per-cell terminal backgrounds.
+monitor instead of falling back to the saved lines; linking or opening the terminal copies the
+graphics card's current screen onto the panel, and later writes arrive through screen mirroring.
+Background colours are stored and reported through the APIs but are not drawn; the hologram uses
+the teal display panel as its backing instead of per-cell terminal backgrounds.
 
 ### Saved links re-bind after a restart
 
@@ -115,7 +130,9 @@ CI runs `gradle build` (which includes the unit tests) and `gradle runGameTestSe
 push and pull request. The game-test job stages the OpenComputers test jar from `libs/` into
 `run/mods` first, so the Screen Linker test runs there too. Every run attaches the built mod jar,
 and failed runs upload the test report, server log and crash reports. Pushing a `v<version>` tag
-(matching `mod_version`) runs the same checks and publishes the jar in a GitHub Release.
+(matching `mod_version`) runs the same checks and publishes the jar in a GitHub Release. Record the
+changes under that version in [CHANGELOG.md](CHANGELOG.md) before tagging; the publishing steps live
+in [.github/workflows/release.yml](.github/workflows/release.yml).
 
 The OpenComputers integration is compiled automatically when the OC 26.1 source archive is present
 at `.opencomputers-api/Mantoku1-OpenComputers-NeoForge-26.1-*/`, or against the test jar at
@@ -131,6 +148,14 @@ and is not bundled into the jar, so the jar still loads without OpenComputers in
 integration is enabled, its classes are compiled into the normal mod output, so Gradle's
 `runClient`/`runServer` configurations load the same `TextBuffer` block entity as the packaged jar
 instead of falling back to the plain projector.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for what changed in each release. The current release is **0.2.0**:
+typing into a linked computer from the hologram itself, Unicode-safe terminal text, and
+cell-accurate rendering of terminal characters and box-drawing frames. Release builds are produced
+by [.github/workflows/release.yml](.github/workflows/release.yml) from a `v<version>` tag; the
+[Build](#build) section has the local steps and the tag check.
 
 ## Status
 
@@ -177,6 +202,11 @@ instead of falling back to the plain projector.
   network without another Screen Linker click. It then installs a graphics card and checks the
   card binds the projector's `TextBuffer`. The projector retries its saved link from the server
   tick every 10 ticks, so a case that loads after the projector still reconnects.
+- The `holosigns:projector_oc_keys` game test types into a linked projector and records the
+  messages the computer receives. It checks that a press and a release arrive as `key_down` and
+  `key_up`, and that the event's source is the keyboard the panel reports through `getKeyboards`;
+  OpenComputers' terminal silently drops keys from any other address, which is what made typing
+  look dead before.
 - The `holosigns:projector_oc_relink_unloaded` game test covers a chunk unload: it saves the linked
   projector's block entity data, removes it, replaces the linked case while the projector is
   unloaded, and loads the saved data into the fresh block entity. It checks the saved link and

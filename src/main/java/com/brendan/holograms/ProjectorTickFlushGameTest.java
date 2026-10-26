@@ -76,6 +76,24 @@ final class ProjectorTickFlushGameTest {
         helper.runAtTickTime(2, () -> {
             helper.assertFalse(projector.isUpdatePending(),
                     "the next server tick should have flushed the second display update");
+
+            // The editor sends every field on save, including the authored lines. Saving a change
+            // to any other setting while a computer is on screen must not take the hologram back
+            // from the computer, or the link looks dead until the computer writes again.
+            projector.setMode(DisplayMode.MONITOR);
+            projector.setDistance(3);
+            projector.setBackgroundColor(0x123456);
+            int textVersion = projector.getTextVersion();
+            projector.setLines(projector.getLines());
+            helper.assertTrue(projector.getMode() == DisplayMode.MONITOR,
+                    "saving the editor without a text change should keep the computer on screen");
+            helper.assertTrue(projector.getTextVersion() == textVersion,
+                    "an unchanged text save should not queue a new text update");
+
+            // Actually editing the lines is still an explicit request for the authored text.
+            projector.setLines(java.util.List.of("edited"));
+            helper.assertTrue(projector.getMode() == DisplayMode.LINES,
+                    "editing the lines should switch the hologram back to the authored text");
             helper.succeed();
         });
     }

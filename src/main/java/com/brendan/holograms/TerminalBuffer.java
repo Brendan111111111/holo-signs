@@ -16,13 +16,17 @@ public final class TerminalBuffer {
     public static final int MIN_ROWS = 3;
     public static final int MAX_COLUMNS = 32;
     public static final int MAX_ROWS = 12;
-    public static final int DEFAULT_COLUMNS = 24;
-    public static final int DEFAULT_ROWS = 10;
+    /**
+     * A standard monitor-sized grid at full projector size. Thirty-two columns are the minimum that
+     * fits OpenOS' boot box (31 cells wide) without wrapping its borders into rows of bars.
+     */
+    public static final int DEFAULT_COLUMNS = 32;
+    public static final int DEFAULT_ROWS = 12;
 
     /**
-     * Grid resolution for a projector's configured size. The default 24x10 grid is used at 100%,
-     * so a larger hologram has more columns and rows instead of only magnifying the same grid. The
-     * result is always within the terminal's minimum and maximum.
+     * Grid resolution for a projector's configured size. The 32x12 grid is used at 100%; a smaller
+     * hologram scales it down so the cells stay legible. The result is always within the terminal's
+     * minimum and maximum.
      */
     public static int columnsForSizePercent(int sizePercent) {
         return scaledDimension(DEFAULT_COLUMNS, sizePercent, MIN_COLUMNS, MAX_COLUMNS);
