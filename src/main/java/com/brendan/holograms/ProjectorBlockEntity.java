@@ -288,6 +288,13 @@ public class ProjectorBlockEntity extends BlockEntity {
     }
 
     /**
+     * Server-side tick hook. The base projector has nothing to do each tick; the OpenComputers
+     * subclass uses it to finish a Screen Linker bind whose computer loaded after the projector.
+     */
+    protected void serverTick() {
+    }
+
+    /**
      * Whether a display update for this projector is waiting for the end-of-tick flush. Visible to
      * the in-world game test, which checks that a write made during a server tick is drained by it.
      */

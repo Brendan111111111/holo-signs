@@ -22,6 +22,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
@@ -45,15 +46,19 @@ import java.util.function.Consumer;
  */
 public final class ProjectorOpenComputersGameTest {
     private static final Identifier TEST = HoloSigns.id("projector_oc_bind");
+    private static final Identifier RELINK_TEST = HoloSigns.id("projector_oc_relink");
     private static final Identifier ENVIRONMENT = HoloSigns.id("projector_oc_bind");
     private static final Identifier STRUCTURE = HoloSigns.id("projector_platform");
 
     private static final int MAX_TICKS = 40;
+    private static final int RELINK_MAX_TICKS = 60;
 
     private static final DeferredRegister<Consumer<GameTestHelper>> TEST_FUNCTIONS =
             DeferredRegister.create(BuiltInRegistries.TEST_FUNCTION, HoloSigns.MOD_ID);
     private static final DeferredHolder<Consumer<GameTestHelper>, Consumer<GameTestHelper>> BIND_TEST =
             TEST_FUNCTIONS.register("projector_oc_bind", () -> ProjectorOpenComputersGameTest::run);
+    private static final DeferredHolder<Consumer<GameTestHelper>, Consumer<GameTestHelper>> RELINK_TEST_FUNCTION =
+            TEST_FUNCTIONS.register("projector_oc_relink", () -> ProjectorOpenComputersGameTest::runRelink);
 
     private ProjectorOpenComputersGameTest() {
     }
@@ -69,6 +74,8 @@ public final class ProjectorOpenComputersGameTest {
                 event.registerEnvironment(ENVIRONMENT, new TestEnvironmentDefinition.AllOf());
         event.registerTest(TEST, new FunctionGameTestInstance(BIND_TEST.getKey(),
                 new TestData<>(environment, STRUCTURE, MAX_TICKS, 0, true)));
+        event.registerTest(RELINK_TEST, new FunctionGameTestInstance(RELINK_TEST_FUNCTION.getKey(),
+                new TestData<>(environment, STRUCTURE, RELINK_MAX_TICKS, 0, true)));
     }
 
     private static void run(GameTestHelper helper) {
@@ -120,6 +127,71 @@ public final class ProjectorOpenComputersGameTest {
             helper.assertTrue(boundBuffer(graphicsCardEnvironment) == ocProjector,
                     "the graphics card should bind the linked projector as its screen");
 
+            helper.succeed();
+        });
+    }
+
+    /**
+     * Reproduces the restart case where the projector keeps its saved link while the computer is
+     * unavailable. Removing and replacing the case leaves the projector's saved position intact;
+     * its server tick must reconnect when the computer is loaded again, without another linker
+     * click.
+     */
+    private static void runRelink(GameTestHelper helper) {
+        BlockPos casePos = new BlockPos(1, 1, 1);
+        BlockPos projectorPos = new BlockPos(2, 1, 1);
+        helper.setBlock(casePos, openComputersBlock("case1"));
+        helper.setBlock(projectorPos, HoloSigns.PROJECTOR.get());
+
+        helper.runAtTickTime(1, () -> {
+            BlockEntity caseEntity = helper.getBlockEntity(casePos, BlockEntity.class);
+            helper.assertTrue(caseEntity instanceof Case,
+                    "the OpenComputers case should provide its computer block entity");
+            ProjectorBlockEntity projector = helper.getBlockEntity(projectorPos, ProjectorBlockEntity.class);
+            helper.assertTrue(projector instanceof OCProjectorBlockEntity,
+                    "the projector should use its OpenComputers TextBuffer block entity");
+            OCProjectorBlockEntity ocProjector = (OCProjectorBlockEntity) projector;
+
+            Player player = helper.makeMockPlayer(GameType.CREATIVE);
+            player.setItemInHand(InteractionHand.MAIN_HAND, selectedLinker(helper.absolutePos(casePos)));
+            BlockPos absoluteProjector = helper.absolutePos(projectorPos);
+            helper.useBlock(projectorPos, player, new BlockHitResult(
+                    Vec3.atCenterOf(absoluteProjector), Direction.NORTH, absoluteProjector, true));
+            helper.assertTrue(ocProjector.hasComputerLink(),
+                    "the Screen Linker should save the projector-to-computer link");
+
+            // The computer loading after the projector is the restart race. Removing it here leaves
+            // the projector with the same saved position but no computer to talk to.
+            helper.setBlock(casePos, Blocks.AIR);
+        });
+
+        helper.runAtTickTime(5, () -> helper.setBlock(casePos, openComputersBlock("case1")));
+        helper.runAtTickTime(25, () -> {
+            BlockEntity caseEntity = helper.getBlockEntity(casePos, BlockEntity.class);
+            helper.assertTrue(caseEntity instanceof Case,
+                    "the replacement case should provide its computer block entity");
+            Case computer = (Case) caseEntity;
+            ProjectorBlockEntity projector = helper.getBlockEntity(projectorPos, ProjectorBlockEntity.class);
+            helper.assertTrue(projector instanceof OCProjectorBlockEntity,
+                    "the projector should still use its OpenComputers TextBuffer block entity");
+            OCProjectorBlockEntity ocProjector = (OCProjectorBlockEntity) projector;
+
+            helper.assertTrue(ocProjector.node() != null && computer.node() != null,
+                    "the projector and computer should both have network nodes");
+            helper.assertTrue(ocProjector.node().network() == computer.node().network(),
+                    "the saved link should reconnect without another Screen Linker click");
+
+            computer.setItem(0, new ItemStack(openComputersItem("graphicscard1")));
+        });
+        helper.runAtTickTime(30, () -> {
+            Case computer = (Case) helper.getBlockEntity(casePos, BlockEntity.class);
+            OCProjectorBlockEntity projector = (OCProjectorBlockEntity) helper.getBlockEntity(
+                    projectorPos, ProjectorBlockEntity.class);
+            Object graphicsCardEnvironment = findGraphicsCard(computer);
+            helper.assertTrue(graphicsCardEnvironment != null,
+                    "the graphics card should be installed on the computer's network");
+            helper.assertTrue(boundBuffer(graphicsCardEnvironment) == projector,
+                    "the restored link should let the graphics card bind the projector");
             helper.succeed();
         });
     }

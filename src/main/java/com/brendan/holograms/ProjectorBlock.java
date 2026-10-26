@@ -16,6 +16,8 @@ import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityTicker;
+import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
@@ -91,6 +93,19 @@ public final class ProjectorBlock extends Block implements EntityBlock {
         // Delegate to the factory so an OpenComputers build can substitute its TextBuffer-capable
         // block entity. Constructing the plain class here would bypass that substitution entirely.
         return HoloSigns.createProjectorBlockEntity(pos, state);
+    }
+
+    /**
+     * Gives the block entity a server tick hook. The OpenComputers integration uses it to retry a
+     * saved wireless link whose computer had not loaded yet when the projector was loaded.
+     */
+    @Override
+    public <T extends BlockEntity> @Nullable BlockEntityTicker<T> getTicker(
+            Level level, BlockState state, BlockEntityType<T> type) {
+        if (level.isClientSide()) return null;
+        return (tickLevel, pos, tickState, entity) -> {
+            if (entity instanceof ProjectorBlockEntity projector) projector.serverTick();
+        };
     }
 
     /**

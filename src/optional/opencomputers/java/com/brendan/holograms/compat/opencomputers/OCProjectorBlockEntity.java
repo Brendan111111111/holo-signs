@@ -41,6 +41,8 @@ public final class OCProjectorBlockEntity extends ProjectorBlockEntity implement
     /** Same range as OpenComputers' Screen Linker. */
     public static final int LINK_RANGE = 64;
     private static final String COMPONENT_NAME = "hologram_projector";
+    /** How often to retry a saved link whose computer was not ready during load. */
+    private static final int RELINK_RETRY_TICKS = 10;
     private static final int[] DEFAULT_PALETTE = {
             0xF0F0F0, 0xF2B233, 0xE57FD8, 0x99B2F2, 0xDEDE6C, 0x7FCC19, 0xF2B2CC, 0x4C4C4C,
             0x999999, 0x4C99B2, 0xB266E5, 0x3366CC, 0x7F664C, 0x57A64E, 0xCC4C4C, 0x191919
@@ -61,6 +63,7 @@ public final class OCProjectorBlockEntity extends ProjectorBlockEntity implement
     private boolean powered = true;
     private BlockPos linkedCase;
     private boolean wirelessEdge;
+    private int relinkCooldown;
 
     public OCProjectorBlockEntity(BlockPos pos, BlockState state) {
         super(HoloSigns.PROJECTOR_ENTITY.get(), pos, state);
@@ -152,6 +155,36 @@ public final class OCProjectorBlockEntity extends ProjectorBlockEntity implement
                 linkToComputer(targetPos, computer);
             }
         }
+    }
+
+    /**
+     * A world reload can load the projector before the linked computer's block entity or network
+     * node exists. The one-shot attempt in {@link #onLoad()} then cannot reconnect, so retry from
+     * the server tick until the computer is available again.
+     */
+    @Override
+    protected void serverTick() {
+        if (linkedCase == null) return;
+        if (relinkCooldown > 0) {
+            relinkCooldown--;
+            return;
+        }
+        relinkCooldown = RELINK_RETRY_TICKS;
+        if (!hasActiveWirelessLink()) {
+            maintainWirelessLink();
+        }
+    }
+
+    /**
+     * Whether the saved computer is loaded and already on the projector's network. A missing
+     * computer counts as active because there is nothing to connect to until it loads.
+     */
+    private boolean hasActiveWirelessLink() {
+        if (!(level instanceof ServerLevel serverLevel)) return true;
+        if (!(serverLevel.getBlockEntity(linkedCase) instanceof Case computer)) return true;
+        Node own = node();
+        Node target = computer.node();
+        return own != null && target != null && own.network() != null && own.network() == target.network();
     }
 
     private void dropWirelessEdge() {
